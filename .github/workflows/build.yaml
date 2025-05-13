@@ -1,0 +1,24 @@
+name: Build and Release
+on:
+  push:
+    tags:
+      - "*"
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+        contents: write
+    steps:
+      - uses: actions/checkout@v2
+      - name: Setup Go
+        uses: actions/setup-go@v2
+        with:
+          stable: "true"
+      - name: Build
+        run: |
+          make build
+      - name: Create Release
+        id: create_release
+        uses: ncipollo/release-action@v1
+        with:
+          artifacts: "./bin/gozap-macos-amd64"

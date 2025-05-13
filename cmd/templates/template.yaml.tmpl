@@ -1,0 +1,123 @@
+Description: Automatically generated with GoZap
+Resources:
+  Lambda:
+    Properties:
+      Code:
+        S3Bucket: {{ .S3Bucket }}
+        S3Key: {{ .S3Key }}
+      Description: Automatically generated with GoZap
+      FunctionName: {{ .FunctionName }}-{{ .Stage }}
+      Handler: bootstrap
+      MemorySize: 128
+      Role: !GetAtt Role.Arn
+      Runtime: provided.al2
+      Timeout: 30
+    Type: AWS::Lambda::Function
+  Role:
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: sts:AssumeRole
+            Effect: Allow
+            Principal:
+              Service: [
+                "lambda.amazonaws.com",
+                "apigateway.amazonaws.com"
+              ]
+        Version: "2012-10-17"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyDocument:
+            Statement:
+              - Action:
+                  - lambda:InvokeFunction
+                Effect: Allow
+                Resource: "*"
+            Version: "2012-10-17"
+          PolicyName: {{ .FunctionName }}-{{ .Stage }}-InvokeFunction
+        - PolicyDocument:
+            Statement:
+              - Action:
+                  - execute-api:*
+                Effect: Allow
+                Resource: "*"
+            Version: "2012-10-17"
+          PolicyName: {{ .FunctionName }}-{{ .Stage }}-AllowAllExecuteAPI
+      RoleName: {{ .FunctionName }}-{{ .Stage }}-role
+    Type: AWS::IAM::Role
+  ANY0:
+    DependsOn:
+      - Api
+      - Role
+    Properties:
+      ApiKeyRequired: false
+      AuthorizationType: NONE
+      HttpMethod: ANY
+      Integration:
+        CacheKeyParameters: []
+        CacheNamespace: none
+        Credentials: !GetAtt Role.Arn
+        IntegrationHttpMethod: POST
+        IntegrationResponses: []
+        PassthroughBehavior: NEVER
+        Type: AWS_PROXY
+        Uri: !Sub
+          - arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${FunctionArn}/invocations
+          - FunctionArn: !GetAtt Lambda.Arn
+      MethodResponses: []
+      ResourceId: !GetAtt Api.RootResourceId
+      RestApiId: !Ref Api
+    Type: AWS::ApiGateway::Method
+  ANY1:
+    DependsOn:
+      - Api
+      - Role
+    Properties:
+      ApiKeyRequired: false
+      AuthorizationType: NONE
+      HttpMethod: ANY
+      Integration:
+        CacheKeyParameters: []
+        CacheNamespace: none
+        Credentials: !GetAtt Role.Arn
+        IntegrationHttpMethod: POST
+        IntegrationResponses: []
+        PassthroughBehavior: NEVER
+        Type: AWS_PROXY
+        Uri: !Sub
+          - arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${FunctionArn}/invocations
+          - FunctionArn: !GetAtt Lambda.Arn
+      MethodResponses: []
+      ResourceId: !Ref ResourceAnyPathSlashed
+      RestApiId: !Ref Api
+    Type: AWS::ApiGateway::Method
+  Api:
+    Properties:
+      Description: Created automatically by GoZap.
+      Name: {{ .FunctionName }}-{{ .Stage }}
+    Type: AWS::ApiGateway::RestApi
+  ResourceAnyPathSlashed:
+    Properties:
+      ParentId: !GetAtt Api.RootResourceId
+      PathPart: "{proxy+}"
+      RestApiId: !Ref Api
+    Type: AWS::ApiGateway::Resource
+  Deployment:
+    DependsOn:
+      - Lambda
+      - ANY0
+      - ANY1
+    Properties:
+      Description: Created automatically by GoZap.
+      RestApiId: !Ref Api
+      StageName: {{ .Stage }}
+    Type: AWS::ApiGateway::Deployment
+Outputs:
+  ApiEndpoint:
+    Description: API Gateway endpoint URL for Prod stage for {{ .FunctionName }}.
+    Value: !Sub
+      - https://${ApiId}.execute-api.${AWS::Region}.amazonaws.com/{{ .Stage }}
+      - ApiId: !Ref Api
+    Export:
+      Name: !Sub ${AWS::StackName}-ApiEndpoint
