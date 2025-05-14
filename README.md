@@ -25,6 +25,25 @@ GoZapGin is a command-line tool that allows you to easily create and manage Lamb
    ```
 
 ## Commands
-- `gozapgin init --stage production --name test-project --bucket deploymentbucket`: Initialize GoZapGin project with the specified stage, name, and bucket.
-- `gozapgin deploy --stage production`: Deploy the Lambda function to the specified stage.
-- `gozapgin undeploy --stage production`: Undeploy the Lambda function from the specified stage.
+## Commands
+
+| Command | Flag | Description |
+|---------|------|-------------|
+| `gozapgin init` | `--stage` | Initialize GoZapGin project with the specified stage |
+| | `--name` | Set the project name |
+| | `--bucket` | Specify the deployment bucket |
+| `gozapgin deploy` | `--stage` | Deploy the Lambda function to the specified stage |
+| `gozapgin undeploy` | `--stage` | Undeploy the Lambda function from the specified stage |
+
+### Examples
+
+```bash
+# Initialize a new project
+gozapgin init --stage production --name test-project --bucket deploymentbucket
+
+# Deploy to production
+gozapgin deploy --stage production
+
+# Undeploy from production
+gozapgin undeploy --stage production
+```
