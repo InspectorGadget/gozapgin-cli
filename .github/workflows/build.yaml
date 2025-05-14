@@ -21,4 +21,4 @@ jobs:
         id: create_release
         uses: ncipollo/release-action@v1
         with:
-          artifacts: "./bin/gozap-macos-amd64"
+          artifacts: "./bin/gozap-macos-amd64,./bin/gozap-linux-amd64,./bin/gozap-windows-amd64.exe"
