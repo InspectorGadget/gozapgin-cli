@@ -25,7 +25,6 @@ GoZapGin is a command-line tool that allows you to easily create and manage Lamb
    ```
 
 ## Commands
-## Commands
 
 | Command | Flag | Description |
 |---------|------|-------------|
@@ -35,7 +34,7 @@ GoZapGin is a command-line tool that allows you to easily create and manage Lamb
 | `gozapgin deploy` | `--stage` | Deploy the Lambda function to the specified stage |
 | `gozapgin undeploy` | `--stage` | Undeploy the Lambda function from the specified stage |
 
-### Examples
+## Examples
 
 ```bash
 # Initialize a new project
