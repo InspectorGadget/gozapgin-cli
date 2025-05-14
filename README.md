@@ -3,10 +3,12 @@
 ## Description
 GoZapGin is a command-line tool that allows you to easily create and manage Lambda functions build on top of Gin Framework. It provides a simple Command Line Interface (CLI) to create, build, and deploy your Lambda functions with ease.
 
+[Features roadmap (Board)](https://github.com/users/InspectorGadget/projects/2)
+
 ## Features
 - Create a new Lambda function with a Gin framework
 - Build the Lambda function
-- Deploy the Lambda function to AWS
+- Deploy/Undeploy the Lambda function to/from AWS
 - Generate a zip file for the Lambda function
 
 ## Usage
@@ -21,3 +23,8 @@ GoZapGin is a command-line tool that allows you to easily create and manage Lamb
    ```bash
    gozapgin --help
    ```
+
+## Commands
+- `gozapgin init --stage production --name test-project --bucket deploymentbucket`: Initialize GoZapGin project with the specified stage, name, and bucket.
+- `gozapgin deploy --stage production`: Deploy the Lambda function to the specified stage.
+- `gozapgin undeploy --stage production`: Undeploy the Lambda function from the specified stage.

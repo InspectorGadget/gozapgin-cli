@@ -8,7 +8,7 @@ import (
 )
 
 var (
-	Version    = "0.0.2"
+	Version    = "0.0.3"
 	Verbose    bool
 	ConfigPath string
 )
@@ -23,6 +23,7 @@ var rootCmd = &cobra.Command{
 func init() {
 	rootCmd.AddCommand(cmd.NewInitCommand())
 	rootCmd.AddCommand(cmd.NewDeployCommand())
+	rootCmd.AddCommand(cmd.NewUndeployCommand())
 
 	rootCmd.SetVersionTemplate("GoZap Version: {{.Version}}\n")
 }

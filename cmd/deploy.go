@@ -148,7 +148,18 @@ func runDeploy(opts *DeployOptions) error {
 		return fmt.Errorf("failed to get stack outputs")
 	}
 
-	// 10. Output the stack details
+	// 10. Delete the zip file, template file and bin directory
+	if err := os.Remove("deployment.zip"); err != nil {
+		return fmt.Errorf("failed to delete zip file: %w", err)
+	}
+	if err := os.Remove("template.yaml"); err != nil {
+		return fmt.Errorf("failed to delete template file: %w", err)
+	}
+	if err := os.RemoveAll("bin/"); err != nil {
+		return fmt.Errorf("failed to delete bin directory: %w", err)
+	}
+
+	// 11. Output the stack details
 	fmt.Println("✅ Deployment complete!")
 
 	return nil
