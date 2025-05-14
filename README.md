@@ -46,3 +46,6 @@ gozapgin deploy --stage production
 # Undeploy from production
 gozapgin undeploy --stage production
 ```
+
+## Example Projects (Made to support GoZapGin)
+- [AWS GinAdapter Implementation](https://github.com/InspectorGadget/ginadapter-lambda)
