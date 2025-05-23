@@ -2,11 +2,11 @@ package cmd
 
 import (
 	"embed"
-	"encoding/json"
 	"fmt"
-	"html/template"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"time"
 
 	"github.com/spf13/cobra"
 )
@@ -35,132 +35,129 @@ func NewDeployCommand() *cobra.Command {
 func runDeploy(opts *DeployOptions) error {
 	fmt.Println("🚀 Deploying GoZap project...")
 
-	// 1. Build the project
-	build := exec.Command("go", "build", "-o", "bin/bootstrap", "-ldflags", "-s -w", ".")
-	build.Env = append(os.Environ(), "GOOS=linux", "GOARCH=amd64")
-	if err := build.Run(); err != nil {
-		return fmt.Errorf("failed to build project: %w", err)
-	}
-
-	// 2. Zip the project
-	zip := exec.Command("zip", "-j", "deployment.zip", "bin/bootstrap")
-	if err := zip.Run(); err != nil {
-		return fmt.Errorf("failed to zip project: %w", err)
-	}
-
-	// 3. Read config file
-	config := map[string]DeploymentConfig{}
-	configFile := "config.json"
-	if _, err := os.Stat(configFile); err == nil {
-		content, err := os.ReadFile(configFile)
-		if err != nil {
-			return fmt.Errorf("failed to read config file: %w", err)
-		}
-		if err := json.Unmarshal(content, &config); err != nil {
-			return fmt.Errorf("failed to parse config file: %w", err)
-		}
-	}
-
-	// 4. Create CloudFormation file
-	if _, ok := config[opts.Stage]; !ok {
-		return fmt.Errorf("stage %s not found in config.json", opts.Stage)
-	}
-
-	// 5. Parse the deployment configuration and generate the CloudFormation template
-	templateContent, err := templateFS.ReadFile("templates/template.yaml.tmpl")
+	// 1. Read config file
+	config, err := readConfig("config.json")
 	if err != nil {
-		return fmt.Errorf("failed to read template file: %w", err)
+		return err
 	}
 
-	tmpl, err := template.New("cfTemplate").Parse(string(templateContent))
-	if err != nil {
-		return fmt.Errorf("failed to parse template: %w", err)
+	// Validate stage exists in config
+	stageConfig, exists := config[opts.Stage]
+	if !exists {
+		return fmt.Errorf("❌ stage '%s' not found in configuration", opts.Stage)
 	}
 
-	outFile, err := os.Create("template.yaml")
-	if err != nil {
-		return fmt.Errorf("failed to create output file: %w", err)
-	}
-	defer outFile.Close()
-
-	if err := tmpl.Execute(outFile, config[opts.Stage]); err != nil {
-		return fmt.Errorf("failed to execute template: %w", err)
+	// 2. Check if CloudFormation stack already exists
+	stackName := fmt.Sprintf("%s-%s", stageConfig.FunctionName, opts.Stage)
+	if err := checkStackExists(stackName); err == nil {
+		return fmt.Errorf("❌ Stack '%s' already exists. Use 'update' command instead", stackName)
 	}
 
-	// 6. Check if S3 is created
-	s3Check := exec.Command("aws", "s3api", "head-bucket", "--bucket", config[opts.Stage].S3Bucket)
-	if err := s3Check.Run(); err != nil {
-		if _, ok := err.(*exec.ExitError); ok {
-			return fmt.Errorf("S3 bucket %s does not exist: %w", config[opts.Stage].S3Bucket, err)
-		}
-		return fmt.Errorf("failed to check S3 bucket: %w", err)
+	// Create temporary directories
+	tempDir := "bin"
+	if err := os.MkdirAll(tempDir, 0755); err != nil {
+		return fmt.Errorf("failed to create bin directory: %w", err)
 	}
 
-	// 5. Upload the zip file to S3
-	s3Upload := exec.Command("aws", "s3", "cp", "deployment.zip", fmt.Sprintf("s3://%s/%s", config[opts.Stage].S3Bucket, config[opts.Stage].S3Key))
-	if err := s3Upload.Run(); err != nil {
-		return fmt.Errorf("failed to upload to S3: %w", err)
+	// Set up cleanup for local files
+	currentTime := time.Now().Format("20060102150405")
+	zipFileName := fmt.Sprintf("deployment-%s.zip", currentTime)
+	defer cleanupFiles([]string{zipFileName, "template.yaml", tempDir})
+
+	// 3. Build the project
+	if err := buildProject(tempDir); err != nil {
+		return err
 	}
 
-	// 6. Deploy the CloudFormation stack
-	stackName := fmt.Sprintf("%s-%s", config[opts.Stage].FunctionName, opts.Stage)
-	deploy := exec.Command("aws", "cloudformation", "deploy", "--template-file", "template.yaml", "--stack-name", stackName, "--capabilities", "CAPABILITY_NAMED_IAM")
-	if err := deploy.Run(); err != nil {
-		return fmt.Errorf("failed to deploy CloudFormation stack: %w", err)
+	// 4. Zip the project
+	if err := zipProject(zipFileName, filepath.Join(tempDir, "bootstrap")); err != nil {
+		return err
 	}
 
-	// 7. Wait for stack creation to complete
-	wait := exec.Command("aws", "cloudformation", "wait", "stack-create-complete", "--stack-name", stackName)
-	if err := wait.Run(); err != nil {
-		return fmt.Errorf("failed to wait for stack creation: %w", err)
+	// 5. Check if S3 bucket exists
+	if err := checkS3Bucket(stageConfig.S3Bucket); err != nil {
+		return err
 	}
 
-	// 8. Output the stack details
-	describe := exec.Command("aws", "cloudformation", "describe-stacks", "--stack-name", stackName)
-	output, err := describe.Output()
-	if err != nil {
-		return fmt.Errorf("failed to describe stack: %w", err)
+	// Update config with new S3Key
+	stageConfig.S3Key = zipFileName
+	stageConfig.Stage = opts.Stage
+
+	// 6. Upload to S3
+	if err := uploadToS3(zipFileName, stageConfig.S3Bucket, zipFileName); err != nil {
+		return err
 	}
 
-	// 9. Parse the output to get the stack details
-	var stackDetails map[string]any
-	if err := json.Unmarshal(output, &stackDetails); err != nil {
-		return fmt.Errorf("failed to parse stack details: %w", err)
+	// Wait for the S3 upload to propagate
+	fmt.Println("Waiting for S3 upload to propagate...")
+	if err := waitForS3Object(stageConfig.S3Bucket, zipFileName); err != nil {
+		return err
 	}
 
-	fmt.Println("Stack Details:")
-	// Get the stack outputs
-	if outputs, ok := stackDetails["Stacks"].([]any); ok && len(outputs) > 0 {
-		if stack, ok := outputs[0].(map[string]any); ok {
-			if stackOutputs, ok := stack["Outputs"].([]any); ok {
-				for _, output := range stackOutputs {
-					if outputMap, ok := output.(map[string]any); ok {
-						if outputKey, ok := outputMap["OutputKey"].(string); ok {
-							if outputValue, ok := outputMap["OutputValue"].(string); ok {
-								fmt.Printf("  %s: %s\n", outputKey, outputValue)
-							}
-						}
-					}
-				}
-			}
-		}
-	} else {
-		return fmt.Errorf("failed to get stack outputs")
+	// 7. Generate CloudFormation template
+	if err := generateTemplate("template.yaml", stageConfig); err != nil {
+		return err
 	}
 
-	// 10. Delete the zip file, template file and bin directory
-	if err := os.Remove("deployment.zip"); err != nil {
-		return fmt.Errorf("failed to delete zip file: %w", err)
-	}
-	if err := os.Remove("template.yaml"); err != nil {
-		return fmt.Errorf("failed to delete template file: %w", err)
-	}
-	if err := os.RemoveAll("bin/"); err != nil {
-		return fmt.Errorf("failed to delete bin directory: %w", err)
+	// 8. Deploy CloudFormation stack
+	if err := deployStack(stackName); err != nil {
+		return err
 	}
 
-	// 11. Output the stack details
+	// 9. Wait for stack creation to complete
+	if err := waitForStackCreation(stackName); err != nil {
+		return err
+	}
+
+	// 10. Output the stack details
+	if err := outputStackDetails(stackName); err != nil {
+		return err
+	}
+
+	// 11. NOW it's safe to delete the zip file from S3
+	if err := deleteFromS3(stageConfig.S3Bucket, zipFileName); err != nil {
+		fmt.Printf("Warning: failed to clean up S3 file: %v\n", err)
+	}
+
 	fmt.Println("✅ Deployment complete!")
+	return nil
+}
 
+func checkS3Bucket(bucket string) error {
+	fmt.Printf("Checking if S3 bucket '%s' exists...\n", bucket)
+	s3Check := exec.Command("aws", "s3api", "head-bucket", "--bucket", bucket)
+	if output, err := s3Check.CombinedOutput(); err != nil {
+		return fmt.Errorf("❌ S3 bucket '%s' does not exist or is not accessible: %w\n%s", bucket, err, output)
+	}
+	return nil
+}
+
+func deployStack(stackName string) error {
+	fmt.Printf("Deploying CloudFormation stack '%s'...\n", stackName)
+	deploy := exec.Command(
+		"aws", "cloudformation", "deploy",
+		"--template-file", "template.yaml",
+		"--stack-name", stackName,
+		"--capabilities", "CAPABILITY_NAMED_IAM",
+	)
+	if output, err := deploy.CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to deploy CloudFormation stack: %w\n%s", err, output)
+	}
+	return nil
+}
+
+func waitForStackCreation(stackName string) error {
+	fmt.Printf("Waiting for stack '%s' creation to complete...\n", stackName)
+
+	waitCmd := exec.Command(
+		"aws", "cloudformation", "wait", "stack-create-complete",
+		"--stack-name", stackName,
+	)
+
+	if output, err := waitCmd.CombinedOutput(); err != nil {
+		return fmt.Errorf("stack creation failed or timed out: %w\n%s", err, output)
+	}
+
+	fmt.Println("Stack creation completed successfully!")
 	return nil
 }
